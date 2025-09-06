@@ -3,6 +3,11 @@ MsgC( Color( 190, 255, 255 ), "[ MetroDialogue ] Loading...!\n" )
 MetroDialogue = MetroDialogue or {}
 MetroDialogue.MultiResponderChance = MetroDialogue.MultiResponderChance or 0.5
 MetroDialogue.ResponseGap = MetroDialogue.ResponseGap or 0.15
+MetroDialogue.SearchRadius = MetroDialogue.SearchRadius or 256
+MetroDialogue.MinGroupSize = MetroDialogue.MinGroupSize or 3
+MetroDialogue.CharRate = MetroDialogue.CharRate or 0.06
+MetroDialogue.MinLineDur = MetroDialogue.MinLineDur or 1.0
+MetroDialogue.MaxLineDur = MetroDialogue.MaxLineDur or 4.0
 
 local function entsInCube( center, radius )
 	if ( !isvector( center ) ) then
@@ -65,6 +70,15 @@ MetroDialogue.Lines = {
 if ( SERVER ) then
 	util.AddNetworkString( "MetroDialogue_Caption" )
 
+	-- Server tunables (can be overridden by ConVars)
+	local cvar_multi = CreateConVar( "metrodialogue_multi_chance", "0.5", FCVAR_ARCHIVE, "Chance an additional listener will also respond" )
+	local cvar_gap = CreateConVar( "metrodialogue_response_gap", "0.15", FCVAR_ARCHIVE, "Gap between sequential listener responses (seconds)" )
+	local cvar_search = CreateConVar( "metrodialogue_search_radius", "256", FCVAR_ARCHIVE, "Search radius for finding group participants (units)" )
+	local cvar_min_group = CreateConVar( "metrodialogue_min_group", "3", FCVAR_ARCHIVE, "Minimum participants to satisfy boolean requiresGroup" )
+	local cvar_char_rate = CreateConVar( "metrodialogue_char_rate", "0.06", FCVAR_ARCHIVE, "Seconds per character when estimating sound duration fallback" )
+	local cvar_min_line = CreateConVar( "metrodialogue_min_line_dur", "1.0", FCVAR_ARCHIVE, "Minimum fallback duration for lines (seconds)" )
+	local cvar_max_line = CreateConVar( "metrodialogue_max_line_dur", "4.0", FCVAR_ARCHIVE, "Maximum fallback duration for lines (seconds)" )
+
 	function MetroDialogue.InitialiseTimer( entity )
 		local timerID = "MetroDialogue_NPCInit_" .. entity:EntIndex()
 
@@ -81,7 +95,8 @@ if ( SERVER ) then
 			end
 
 			local listeners = {}
-			local nearby = entsInCube( entity:GetPos(), 256 )
+			local radius = ( cvar_search and cvar_search:GetFloat() ) or ( MetroDialogue.SearchRadius or 256 )
+			local nearby = entsInCube( entity:GetPos(), radius )
 
 			for i = 1, #nearby do
 				local e = nearby[ i ]
@@ -149,10 +164,14 @@ if ( SERVER ) then
 		end
 
 		if ( dur <= 0 ) then
+			local rate = ( cvar_char_rate and cvar_char_rate:GetFloat() ) or ( MetroDialogue.CharRate or 0.06 )
+			local minDur = ( cvar_min_line and cvar_min_line:GetFloat() ) or ( MetroDialogue.MinLineDur or 1.0 )
+			local maxDur = ( cvar_max_line and cvar_max_line:GetFloat() ) or ( MetroDialogue.MaxLineDur or 4.0 )
+
 			if ( isstring( text ) and #text > 0 ) then
-				dur = math.Clamp( #text * 0.06, 1.0, 4.0 )
+				dur = math.Clamp( #text * rate, minDur, maxDur )
 			else
-				dur = 1.5
+				dur = minDur
 			end
 		end
 
@@ -162,7 +181,7 @@ if ( SERVER ) then
 	function MetroDialogue.CanSpeak( npc, opts )
 		opts = opts or {}
 
-		if ( !npc:IsNPC() or npc:GetClass() != "npc_metropolice" ) then return false end
+	if ( !npc:IsNPC() or npc:GetClass() != "npc_metropolice" ) then return false end
 
 		if ( !opts.ignoreIdle and !npc:IsCurrentSchedule( SCHED_IDLE_STAND ) ) then return false end
 
@@ -177,7 +196,7 @@ if ( SERVER ) then
 	end
 
 	-- Helper to clear dialogue partners for a set of participants without nesting pyramids
-	function MetroDialogue.ClearDialoguePartners( participants )
+	function MetroDialogue.ClearDialoguePartners( participants, sessionId )
 		if ( !istable( participants ) ) then return end
 
 		for i = 1, #participants do
@@ -185,8 +204,10 @@ if ( SERVER ) then
 
 			if ( IsValid( p ) ) then
 				local t = p:GetTable()
+				if ( !istable( t ) ) then return end
 
-				if ( istable( t ) ) then
+					-- Only clear if this is the same session
+				if ( sessionId == nil or t.MetroDialogue_SessionId == sessionId ) then
 					t.MetroDialogue_DialoguePartners = {}
 				end
 			end
@@ -198,7 +219,8 @@ if ( SERVER ) then
 		if ( requiresGroup == nil ) then return true end
 
 		if ( isbool( requiresGroup ) ) then
-			return ( requiresGroup == false ) or ( participantCount >= 3 )
+			local minGroup = ( cvar_min_group and cvar_min_group:GetInt() ) or ( MetroDialogue.MinGroupSize or 3 )
+			return ( requiresGroup == false ) or ( participantCount >= minGroup )
 		end
 
 		if ( isnumber( requiresGroup ) ) then
@@ -209,25 +231,28 @@ if ( SERVER ) then
 	end
 
 	-- Returns responses that are eligible for the current participant count (and optional canSay checks)
+	-- Evaluate canSay rules safely (function or boolean). If function, signature is (speaker, listeners, participants, line, response?)
+	function MetroDialogue.EvaluateCanSay( rule, speaker, listeners, participants, line, response )
+		if ( isfunction( rule ) ) then
+			local ok, res = pcall( rule, speaker, listeners, participants, line, response )
+			return ok and res == true
+		elseif ( isbool( rule ) ) then
+			return rule == true
+		end
+
+		return true
+	end
+
 	function MetroDialogue.GetAllowedResponses( responses, speaker, listeners, participants, line )
 		local out = {}
 
 		if ( istable( responses ) ) then
 			for i = 1, #responses do
 				local resp = responses[i]
+				if ( !istable( resp ) ) then return end
 
-				if ( istable( resp ) and MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants ) ) then
-					local ok = true
-
-					if ( isfunction( resp.canSay ) ) then
-						ok = resp:CanSay( speaker, listeners, participants, line ) == true
-					elseif ( isbool( resp.canSay ) ) then
-						ok = resp.canSay == true
-					end
-
-					if ( ok ) then
-						out[ #out + 1 ] = resp
-					end
+				if ( istable( resp ) and MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants ) and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, listeners, participants, line, resp ) ) then
+					out[ #out + 1 ] = resp
 				end
 			end
 		end
@@ -236,10 +261,14 @@ if ( SERVER ) then
 	end
 
 	-- Helper to perform a listener's reply (reduces nesting inside timers)
-	function MetroDialogue.ResponderSpeak( responder, response, participants, respDur )
+	function MetroDialogue.ResponderSpeak( responder, response, participants, respDur, sessionId )
 		if ( !IsValid( responder ) ) then return end
 		local t = responder:GetTable()
 		if ( !istable( t ) ) then return end
+
+		-- Ensure still in the same session
+		if ( sessionId != nil and t.MetroDialogue_SessionId != sessionId ) then return end
+
 		t.MetroDialogue_SpeakingUntil = CurTime() + respDur + 0.1
 		t.MetroDialogue_DialoguePartners = participants
 		responder:EmitSound( response.soundPath or "", 75, 100, 1, CHAN_VOICE )
@@ -259,18 +288,8 @@ if ( SERVER ) then
 		for i = 1, #MetroDialogue.Lines do
 			local line = MetroDialogue.Lines[i]
 
-			if ( istable( line ) and MetroDialogue.IsGroupAllowed( line.requiresGroup, participantCount ) ) then
-				local ok = true
-
-				if ( isfunction( line.canSay ) ) then
-					ok = line:canSay( speaker, listeners, tmpParticipants, line ) == true
-				elseif ( isbool( line.canSay ) ) then
-					ok = line.canSay == true
-				end
-
-				if ( ok ) then
-					allowedLines[ #allowedLines + 1 ] = line
-				end
+			if ( istable( line ) and MetroDialogue.IsGroupAllowed( line.requiresGroup, participantCount ) and MetroDialogue.EvaluateCanSay( line.canSay, speaker, listeners, tmpParticipants, line ) ) then
+				allowedLines[ #allowedLines + 1 ] = line
 			end
 		end
 
@@ -291,11 +310,15 @@ if ( SERVER ) then
 		local participants = { speaker }
 		for i = 1, #listeners do participants[#participants + 1] = listeners[i] end
 
+		-- Assign a session id to guard timers and cleanup
+		local sessionId = ( "md_%d_%d" ):format( math.floor( CurTime() * 1000 ), speaker:EntIndex() )
+
 		for i = 1, #participants do
 			local p = participants[i]
 			local t = p:GetTable()
 
 			if ( istable( t ) ) then
+				t.MetroDialogue_SessionId = sessionId
 				t.MetroDialogue_DialoguePartners = participants
 			end
 		end
@@ -319,6 +342,10 @@ if ( SERVER ) then
 		if ( listeners[ 2 ] != nil ) then
 			timer.Simple( speakDur + 0.2, function()
 				if ( !IsValid( speaker ) ) then return end
+
+				-- If session changed, abort
+				local st = speaker:GetTable()
+				if ( !istable( st ) or st.MetroDialogue_SessionId != sessionId ) then return end
 
 				-- Build eligible candidates
 				local candidates = {}
@@ -347,7 +374,8 @@ if ( SERVER ) then
 
 				for i = 1, #candidates do
 					if ( i == primaryIndex ) then continue end
-					if ( math.Rand( 0, 1 ) < ( MetroDialogue.MultiResponderChance or 0.5 ) ) then
+					local chance = ( cvar_multi and cvar_multi:GetFloat() ) or ( MetroDialogue.MultiResponderChance or 0.5 )
+					if ( math.Rand( 0, 1 ) < chance ) then
 						order[ #order + 1 ] = candidates[ i ]
 					end
 				end
@@ -361,15 +389,16 @@ if ( SERVER ) then
 					local startDelay = chainOffset
 
 					timer.Simple( startDelay, function()
-						MetroDialogue.ResponderSpeak( responder, response, participants, respDur )
+						MetroDialogue.ResponderSpeak( responder, response, participants, respDur, sessionId )
 					end)
 
-					chainOffset = chainOffset + respDur + ( MetroDialogue.ResponseGap or 0.15 )
+					local gap = ( cvar_gap and cvar_gap:GetFloat() ) or ( MetroDialogue.ResponseGap or 0.15 )
+					chainOffset = chainOffset + respDur + gap
 				end
 
 				-- Clear partners after the last scheduled response
 				timer.Simple( chainOffset + 0.2, function()
-					MetroDialogue.ClearDialoguePartners( participants )
+					MetroDialogue.ClearDialoguePartners( participants, sessionId )
 				end)
 			end)
 
@@ -387,6 +416,10 @@ if ( SERVER ) then
 			listenerTable = listener:GetTable()
 			if ( !istable( listenerTable ) ) then return end
 
+			-- Abort if session changed
+			local lt = speaker:GetTable()
+			if ( !istable( lt ) or lt.MetroDialogue_SessionId != sessionId ) then return end
+
 			local allowedResponses = MetroDialogue.GetAllowedResponses( randomDialogue.responses, speaker, listeners, participants, randomDialogue )
 			if ( allowedResponses[1] == nil ) then
 				MetroDialogue.ClearDialoguePartners( participants )
@@ -402,7 +435,7 @@ if ( SERVER ) then
 
 			-- Clear partners when the response ends
 			timer.Simple( respDur + 0.2, function()
-				MetroDialogue.ClearDialoguePartners( participants )
+				MetroDialogue.ClearDialoguePartners( participants, sessionId )
 			end)
 		end)
 
@@ -448,11 +481,11 @@ if ( SERVER ) then
 		local entTable = entity:GetTable()
 		if ( !istable( entTable ) ) then return end
 
-		if ( string.find( soundPath, "metrodialogue/" ) != nil and entTable.IsSpeakingCoreChatter ) then
+	if ( string.find( soundPath, "metrodialogue/" ) != nil and entTable.IsSpeakingCoreChatter ) then
 			return false
 		end
 
-		if ( string.find( data.OriginalSoundName, "METROPOLICE" ) != nil ) then
+	if ( string.find( data.OriginalSoundName, "METROPOLICE" ) != nil ) then
 			if ( isnumber( entTable.MetroDialogue_SpeakingUntil ) and CurTime() < entTable.MetroDialogue_SpeakingUntil ) then
 				return false
 			end
@@ -469,6 +502,17 @@ if ( SERVER ) then
 			end)
 		end
 	end)
+
+	local metrocops = ents.FindByClass( "npc_metropolice" )
+	for i = 1, #metrocops do
+		local cop = metrocops[ i ]
+
+		local timerID = "MetroDialogue_NPCInit_" .. cop:EntIndex()
+		if ( timer.Exists( timerID ) ) then
+			timer.Remove( timerID )
+			MetroDialogue.InitialiseTimer( cop )
+		end
+	end
 else
 	net.Receive( "MetroDialogue_Caption", function()
 		local npc = net.ReadEntity()
@@ -487,15 +531,4 @@ else
 
 		gui.AddCaption( sentence, captionDuration )
 	end)
-
-	local metrocops = ents.FindByClass( "npc_metropolice" )
-	for i = 1, #metrocops do
-		local cop = metrocops[i]
-
-		local timerID = "MetroDialogue_NPCInit_" .. cop:EntIndex()
-		if ( timer.Exists( timerID ) ) then
-			timer.Remove( timerID )
-			MetroDialogue.InitialiseTimer( cop )
-		end
-	end
 end
