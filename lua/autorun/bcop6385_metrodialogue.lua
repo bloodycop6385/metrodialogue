@@ -22,7 +22,7 @@ MetroDialogue.Lines = {
 		text = "Hey, did you hear about about HERO-6 ? I believe he jumped off a bridge.",
 
 		responses = {
-			{ soundPath = "metrodialogue/precintlostmind.wav", text = "Bloody hell, even the precinct is losing it's mind." }
+			{ soundPath = "metrodialogue/precintlostmind.wav", text = "Bloody hell, even the precinct's losing it's mind." }
 		}
 	},
 	{
@@ -41,6 +41,11 @@ MetroDialogue.Lines = {
 			{ soundPath = "metrodialogue/tellmeaboutit.wav", text = "Tell me about it." }
 		}
 	},
+	{
+		canSay = function( speaker, listeners, participants, line )
+			return false
+		end,
+	}
 }
 
 if ( SERVER ) then
@@ -69,6 +74,7 @@ if ( SERVER ) then
 		opts = opts or {}
 
 		if ( !npc:IsNPC() or npc:GetClass() != "npc_metropolice" ) then return false end
+
 		if ( !opts.ignoreIdle and !npc:IsCurrentSchedule( SCHED_IDLE_STAND ) ) then return false end
 
 		local npcTable = npc:GetTable()
@@ -86,10 +92,13 @@ if ( SERVER ) then
 	-- Helper to clear dialogue partners for a set of participants without nesting pyramids
 	function MetroDialogue.ClearDialoguePartners( participants )
 		if ( !istable( participants ) ) then return end
+
 		for i = 1, #participants do
 			local p = participants[i]
+
 			if ( IsValid( p ) ) then
 				local t = p:GetTable()
+
 				if ( istable( t ) ) then
 					t.MetroDialogue_DialoguePartners = {}
 				end
@@ -100,33 +109,40 @@ if ( SERVER ) then
 	-- Group requirement helper: supports boolean (true means >=3) or numeric threshold
 	function MetroDialogue.IsGroupAllowed( requiresGroup, participantCount )
 		if ( requiresGroup == nil ) then return true end
+
 		if ( isbool( requiresGroup ) ) then
 			return ( requiresGroup == false ) or ( participantCount >= 3 )
 		end
+
 		if ( isnumber( requiresGroup ) ) then
 			return participantCount >= requiresGroup
 		end
+
 		return true
 	end
 
 	-- Returns responses that are eligible for the current participant count (and optional canSay checks)
 	function MetroDialogue.GetAllowedResponses( responses, speaker, listeners, participants, line )
 		local out = {}
+
 		if ( istable( responses ) ) then
 			for i = 1, #responses do
 				local resp = responses[i]
+
 				if ( istable( resp ) and MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants ) ) then
 					local ok = true
+
 					if ( isfunction( resp.canSay ) ) then
-						local s, r = pcall( resp.canSay, speaker, listeners, participants, line, resp )
-						ok = s and r == true
+						ok = resp:CanSay( speaker, listeners, participants, line ) == true
 					end
+
 					if ( ok ) then
 						out[ #out + 1 ] = resp
 					end
 				end
 			end
 		end
+
 		return out
 	end
 
@@ -142,17 +158,20 @@ if ( SERVER ) then
 		local allowedLines = {}
 		for i = 1, #MetroDialogue.Lines do
 			local line = MetroDialogue.Lines[i]
+
 			if ( istable( line ) and MetroDialogue.IsGroupAllowed( line.requiresGroup, participantCount ) ) then
 				local ok = true
+
 				if ( isfunction( line.canSay ) ) then
-					local s, r = pcall( line.canSay, speaker, listeners, tmpParticipants, line )
-					ok = s and r == true
+					ok = line:canSay( speaker, listeners, tmpParticipants, line ) == true
 				end
+
 				if ( ok ) then
 					allowedLines[ #allowedLines + 1 ] = line
 				end
 			end
 		end
+
 		if ( allowedLines[1] == nil ) then return end
 
 		local randomDialogue = table.Copy( allowedLines[ math.random( #allowedLines ) ] )
@@ -169,17 +188,21 @@ if ( SERVER ) then
 		-- Mark all participants as engaged immediately
 		local participants = { speaker }
 		for i = 1, #listeners do participants[#participants + 1] = listeners[i] end
+
 		for i = 1, #participants do
 			local p = participants[i]
 			local t = p:GetTable()
-			if istable( t ) then
+
+			if ( istable( t ) ) then
 				t.MetroDialogue_DialoguePartners = participants
 			end
 		end
+
 		-- Prevent listeners from starting their own convo while the speaker talks
 		for i = 1, #listeners do
 			local lt = listeners[i]:GetTable()
-			if istable( lt ) then
+
+			if ( istable( lt ) ) then
 				lt.MetroDialogue_SpeakingUntil = CurTime() + speakDur + 0.1
 			end
 		end
@@ -196,8 +219,10 @@ if ( SERVER ) then
 				if ( !IsValid( speaker ) ) then return end
 
 				local maxRespDur = 0
+
 				for i = 1, #listeners do
 					local listener = listeners[ i ]
+
 					if ( !IsValid( listener ) ) then continue end
 					if ( !MetroDialogue.CanSpeak( listener, { ignorePartners = true } ) ) then continue end
 
@@ -209,6 +234,7 @@ if ( SERVER ) then
 
 					local response = allowedResponses[ math.random( #allowedResponses ) ]
 					local respDur = MetroDialogue.SafeSoundDuration( response.soundPath, response.text )
+
 					maxRespDur = math.max( maxRespDur, respDur )
 
 					listenerTable.MetroDialogue_SpeakingUntil = CurTime() + respDur + 0.1
@@ -259,6 +285,7 @@ if ( SERVER ) then
 
 	end
 
+	-- Client caption sender
 	function MetroDialogue.Caption( speaker, sentence )
 		net.Start( "MetroDialogue_Caption" )
 			net.WriteEntity( speaker )
@@ -279,6 +306,7 @@ if ( SERVER ) then
 		entTable.MetroDialogue_DialogueColour = Color( math.random( 0, 255 ), math.random( 0, 255 ), math.random( 0, 255 ) )
 
 		local timerID = "MetroDialogue_NPCInit_" .. ent:EntIndex()
+
 		timer.Create( timerID, 5, 0, function()
 			if ( !IsValid( ent ) ) then
 				timer.Remove( timerID )
@@ -292,9 +320,11 @@ if ( SERVER ) then
 			end
 
 			local listeners = {}
-			local nearby = entsInCube( ent:GetPos(), 192 )
+			local nearby = entsInCube( ent:GetPos(), 256 )
+
 			for i = 1, #nearby do
 				local e = nearby[ i ]
+
 				if ( e:IsNPC() and e != ent and e:GetClass() == "npc_metropolice" ) then
 					listeners[ #listeners + 1 ] = e
 				end
@@ -304,16 +334,20 @@ if ( SERVER ) then
 
 			-- Elect a single initiator (lowest EntIndex) to avoid simultaneous starts
 			local minIdx = ent:EntIndex()
+
 			for i = 1, #listeners do
 				local idx = listeners[i]:EntIndex()
 				if ( idx < minIdx ) then minIdx = idx end
 			end
+
 			if ( ent:EntIndex() != minIdx ) then return end
 
 			local shouldPlay = hook.Run( "MetroDialogue_ShouldPlay", ent, listeners )
 			if ( shouldPlay == false ) then return end
 
 			MetroDialogue.Play( ent, listeners )
+
+			--timer.Adjust( timerID, math.random( 10, 300 ) )
 		end)
 	end )
 
@@ -338,7 +372,7 @@ if ( SERVER ) then
 			return false
 		end
 
-		if ( string.find( soundPath, "npc/metropolice/" ) ) then
+		if ( string.find( data.OriginalSoundName, "METROPOLICE" ) != nil ) then
 			if ( isnumber( entTable.MetroDialogue_SpeakingUntil ) and CurTime() < entTable.MetroDialogue_SpeakingUntil ) then
 				print("[ MetroDialogue ] Blocking overlapping metropolice chatter sound: " .. tostring( soundPath ) )
 				return false
