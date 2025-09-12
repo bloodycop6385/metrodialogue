@@ -193,17 +193,16 @@ if ( SERVER ) then
 
 		if ( !npc:IsNPC() or npc:GetClass() != "npc_metropolice" ) then return false end
 
-			if ( !opts.ignoreIdle and !npc:IsCurrentSchedule( SCHED_IDLE_STAND ) ) then return false end
+		if ( !opts.ignoreIdle and !npc:IsCurrentSchedule( SCHED_IDLE_STAND ) ) then return false end
 
-			local npcTable = npc:GetTable()
-			if ( !istable( npcTable ) ) then return false end
+		local npcTable = npc:GetTable()
+		if ( !istable( npcTable ) ) then return false end
 
-			if ( npcTable.IsSpeakingCoreChatter ) then return false end
-			if ( !opts.ignoreSpeakingUntil and isnumber( npcTable.MetroDialogue_SpeakingUntil ) and CurTime() < npcTable.MetroDialogue_SpeakingUntil ) then return false end
-			if ( !opts.ignorePartners and istable( npcTable.MetroDialogue_DialoguePartners ) and npcTable.MetroDialogue_DialoguePartners[1] != nil ) then return false end
+		if ( npcTable.IsSpeakingCoreChatter ) then return false end
+		if ( !opts.ignoreSpeakingUntil and isnumber( npcTable.MetroDialogue_SpeakingUntil ) and CurTime() < npcTable.MetroDialogue_SpeakingUntil ) then return false end
+		if ( !opts.ignorePartners and istable( npcTable.MetroDialogue_DialoguePartners ) and npcTable.MetroDialogue_DialoguePartners[1] != nil ) then return false end
 
-			return true
-		end
+		return true
 	end
 
 	-- Helpers for dynamic search radius
