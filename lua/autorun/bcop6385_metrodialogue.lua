@@ -56,7 +56,7 @@ MetroDialogue.Lines = {
 
 		responses = {
 			{ soundPath = "metrodialogue/leave.wav", text = "<i>Ugh..<i> Leave my patrol team, right now." },
-			{ soundPath = "metrodialogue/tellmeaboutit.wav", text = "Tell me about it." }
+			{ soundPath = "metrodialogue/tellmeaboutit.wav", text = "Tell me about it." },
 		},
 
 		requiresGroup = 3
@@ -172,8 +172,7 @@ if ( SERVER ) then
 
 			local listeners = {}
 			local radius = ( cvar_search and cvar_search:GetFloat() ) or ( MetroDialogue.SearchRadius or 256 )
-			local nearby = entsInCube( entity:GetPos(), radius )
-
+			local nearby = entsInCube( entity:EyePos(), radius )
 			for i = 1, #nearby do
 				local e = nearby[ i ]
 
