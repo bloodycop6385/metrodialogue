@@ -112,6 +112,31 @@ function MetroDialogue.AddDialogue( tLineData )
 						-- Has access to both the original line and this response
 						return true
 					end,
+					requiresGroup = 2,          -- Same as line-level
+					shouldBeAlone = false,      -- Same as line-level
+					searchRadius = 400,         -- Override search radius for this response specifically
+					includeSchedules = {        -- Responder must be in one of these schedules
+						[SCHED_IDLE_STAND] = true,
+					},
+					excludeSchedules = {
+						[SCHED_AMBUSH] = true,
+					},
+				},
+				-- Multiple responses can be added; one will be chosen randomly if multiple are valid
+			},
+		}
+	
+		-- Notes:
+		-- - All filter properties work on both lines and responses
+		-- - Response filters are checked for each potential responder
+		-- - canSay functions are called safely with pcall
+		-- - searchRadius can be overridden at response level for fine control
+		-- - If no responses are provided, the line becomes a monologue (requires shouldBeAlone = true)
+		]]
+	
+	end
+end
+
 if ( SERVER ) then
 	util.AddNetworkString( "MetroDialogue_Caption" )
 
