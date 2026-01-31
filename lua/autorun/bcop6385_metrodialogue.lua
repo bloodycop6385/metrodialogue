@@ -70,6 +70,48 @@ MetroDialogue.Lines = {
 	}
 }
 
+function MetroDialogue.AddDialogue( tLineData )
+	if ( istable( tLineData ) ) then
+		MetroDialogue.Lines[ #MetroDialogue.Lines + 1 ] = tLineData
+	else
+		error( "Invalid argument: 'tLineData' must be a table" )
+
+		-- Complete template with all available options:
+		--[[
+		local exampleLine = {
+			-- Required properties:
+			soundPath = "metrodialogue/example.wav",     -- Path to sound file
+			text = "Example line",                        -- Caption text (supports HTML tags)
+			
+			-- Optional line-level filters:
+			canSay = function(speaker, listeners, participants, line)
+				-- Custom logic to determine if this line can be spoken
+				-- Return true to allow, false to block
+				return true
+			end,
+			requiresGroup = 2,              -- Number: minimum participants needed, or true (uses cvar default, usually 3)
+			shouldBeAlone = false,          -- Boolean: true = requires zero listeners (monologue), false/nil = requires listeners
+			searchRadius = 300,             -- Number: override search radius for finding participants (default: 256)
+			includeSchedules = {            -- Table: speaker must be in one of these schedules
+				[SCHED_IDLE_STAND] = true,
+			},
+			excludeSchedules = {
+				[SCHED_AMBUSH] = true,
+			},
+			
+			-- Responses (optional):
+			responses = {
+				{
+					-- Required response properties:
+					soundPath = "metrodialogue/response.wav",
+					text = "Response text",
+					
+					-- Optional response-level filters:
+					canSay = function(speaker, listeners, participants, line, response)
+						-- Custom logic for this specific response
+						-- Has access to both the original line and this response
+						return true
+					end,
 if ( SERVER ) then
 	util.AddNetworkString( "MetroDialogue_Caption" )
 
