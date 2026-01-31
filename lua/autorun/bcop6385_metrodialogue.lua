@@ -283,7 +283,7 @@ if ( SERVER ) then
 		radius = radius or MetroDialogue.GetDefaultSearchRadius()
 
 		local out = {}
-		local nearby = entsInCube( center:GetPos(), radius )
+		local nearby = entsInCube( center:EyePos(), radius )
 
 		for i = 1, #nearby do
 			local e = nearby[i]
