@@ -65,7 +65,7 @@ MetroDialogue.Lines = {
 		soundPath = "metrodialogue/ihateyou.wav",
 		text = "I hate you.",
 		responses = {
-			{ soundPath = "metrodialogue/enjoyyourcompany.wav", text = "I enjoy your company as well." }
+			{ soundPath = "metrodialogue/enjoyyourcompany.wav", text = "I'm enjoying your company as well." }
 		},
 	}
 }
@@ -84,6 +84,7 @@ if ( SERVER ) then
 	-- Delay tunables (reserved for future scheduling adjustments)
 	local cvar_min_delay = CreateConVar( "metrodialogue_min_delay_between_chats", "2.0", FCVAR_ARCHIVE, "Minimum delay between chat attempts (seconds)" )
 	local cvar_max_delay = CreateConVar( "metrodialogue_max_delay_between_chats", "10.0", FCVAR_ARCHIVE, "Maximum delay between chat attempts (seconds)" )
+
 	MetroDialogue.MinDelayBetweenChats = MetroDialogue.MinDelayBetweenChats or cvar_min_delay:GetFloat()
 	MetroDialogue.MaxDelayBetweenChats = MetroDialogue.MaxDelayBetweenChats or cvar_max_delay:GetFloat()
 
@@ -242,7 +243,8 @@ if ( SERVER ) then
 
 				if ( MetroDialogue.IsGroupAllowed( resp.requiresGroup, 1 + #nearby )
 					and MetroDialogue.IsAloneAllowed( resp.shouldBeAlone, #nearby )
-					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, nearby, parts, line, resp ) ) then
+					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, nearby, parts, line, resp )
+					and MetroDialogue.IsScheduleAllowed( responder, resp.includeSchedules, resp.excludeSchedules ) ) then
 					allowed[#allowed + 1] = resp
 				end
 			end
@@ -339,6 +341,35 @@ if ( SERVER ) then
 		return true
 	end
 
+	-- Check if speaker's current schedule matches include/exclude requirements
+	function MetroDialogue.IsScheduleAllowed( npc, includeSchedules, excludeSchedules )
+		if ( !IsValid( npc ) or !npc:IsNPC() ) then return true end
+
+		-- If includeSchedules is specified, NPC must be running one of those schedules
+		if ( istable( includeSchedules ) and includeSchedules[1] != nil ) then
+			local matched = false
+			for i = 1, #includeSchedules do
+				if ( npc:IsCurrentSchedule( includeSchedules[i] ) ) then
+					matched = true
+					break
+				end
+			end
+
+			if ( !matched ) then return false end
+		end
+
+		-- If excludeSchedules is specified, NPC must NOT be running any of those schedules
+		if ( istable( excludeSchedules ) and excludeSchedules[1] != nil ) then
+			for i = 1, #excludeSchedules do
+				if ( npc:IsCurrentSchedule( excludeSchedules[i] ) ) then
+					return false
+				end
+			end
+		end
+
+		return true
+	end
+
 	function MetroDialogue.GetAllowedResponses( responses, speaker, listeners, participants, line )
 		local out = {}
 
@@ -347,10 +378,12 @@ if ( SERVER ) then
 				local resp = responses[i]
 				if ( !istable( resp ) ) then return end
 
-				if ( istable( resp )
+				if ( istable( resp ) 
 					and MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants )
 					and MetroDialogue.IsAloneAllowed( resp.shouldBeAlone, #listeners )
-					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, listeners, participants, line, resp ) ) then
+					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, listeners, participants, line, resp )
+					and MetroDialogue.IsScheduleAllowed( speaker, resp.includeSchedules, resp.excludeSchedules ) ) then
+
 					out[ #out + 1 ] = resp
 				end
 			end
@@ -388,7 +421,8 @@ if ( SERVER ) then
 
 				if ( MetroDialogue.IsGroupAllowed( line.requiresGroup, 1 + #effectiveListeners )
 					and MetroDialogue.IsAloneAllowed( line.shouldBeAlone, #effectiveListeners )
-					and MetroDialogue.EvaluateCanSay( line.canSay, speaker, effectiveListeners, effectiveParticipants, line ) ) then
+					and MetroDialogue.EvaluateCanSay( line.canSay, speaker, effectiveListeners, effectiveParticipants, line )
+					and MetroDialogue.IsScheduleAllowed( speaker, line.includeSchedules, line.excludeSchedules ) ) then
 					allowedLines[#allowedLines + 1] = { line = line, listeners = effectiveListeners, participants = effectiveParticipants }
 				end
 			end
@@ -417,7 +451,7 @@ if ( SERVER ) then
 		for i = 1, #listeners do participants[#participants + 1] = listeners[i] end
 
 		-- Assign a session id to guard timers and cleanup
-		local sessionId = ( "md_%d_%d" ):format( math.floor( CurTime() * 1000 ), speaker:EntIndex() )
+		local sessionId = string.format("md_%d_%d", math.floor( CurTime() * 1000 ), speaker:EntIndex() )
 
 		for i = 1, #participants do
 			local p = participants[i]
@@ -501,8 +535,6 @@ if ( SERVER ) then
 		-- We will choose an eligible response after the speaker finishes
 		local listener = listeners[ 1 ]
 
-		print( "[ MetroDialogue ] Only one listener (" .. tostring( listener ) .. "); skipping multi-responder logic." )
-
 		timer.Simple( speakDur + 0.2, function()
 			if ( !IsValid( listener ) ) then return end
 			if ( !MetroDialogue.CanSpeak( listener, { ignorePartners = true } ) ) then return end
@@ -543,7 +575,7 @@ if ( SERVER ) then
 			net.WriteEntity( speaker )
 			net.WriteString( sentence )
 			net.WriteColor( speaker:GetTable().MetroDialogue_DialogueColour or Color( 255, 255, 255 ) )
-		net.SendPVS( speaker:GetPos() )
+		net.SendPAS( speaker:GetPos() )
 	end
 
 	hook.Add( "OnEntityCreated", "MetroDialogue_NPCInit", function( ent )
