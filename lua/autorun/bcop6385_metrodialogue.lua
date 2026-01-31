@@ -376,10 +376,9 @@ if ( SERVER ) then
 		if ( istable( responses ) ) then
 			for i = 1, #responses do
 				local resp = responses[i]
-				if ( !istable( resp ) ) then return end
+				if ( !istable( resp ) ) then continue end
 
-				if ( istable( resp ) 
-					and MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants )
+				if ( MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants )
 					and MetroDialogue.IsAloneAllowed( resp.shouldBeAlone, #listeners )
 					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, listeners, participants, line, resp )
 					and MetroDialogue.IsScheduleAllowed( speaker, resp.includeSchedules, resp.excludeSchedules ) ) then
@@ -485,6 +484,7 @@ if ( SERVER ) then
 			timer.Simple( speakDur + 0.2, function()
 				MetroDialogue.ClearDialoguePartners( participants, sessionId )
 			end)
+
 			return
 		end
 
