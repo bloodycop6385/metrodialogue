@@ -414,29 +414,21 @@ if ( SERVER ) then
 
 		-- If includeSchedules is specified, NPC must be running one of those schedules
 		if ( istable( includeSchedules ) and includeSchedules[1] != nil ) then
-			local matched = false
-			for i = 1, #includeSchedules do
-				if ( npc:IsCurrentSchedule( includeSchedules[i] ) ) then
-					matched = true
-					break
-				end
+			if ( !includeSchedules[npc:GetCurrentSchedule()] ) then
+				return false
 			end
-
-			if ( !matched ) then return false end
 		end
 
 		-- If excludeSchedules is specified, NPC must NOT be running any of those schedules
-		if ( istable( excludeSchedules ) and excludeSchedules[1] != nil ) then
-			for i = 1, #excludeSchedules do
-				if ( npc:IsCurrentSchedule( excludeSchedules[i] ) ) then
-					return false
-				end
+		if ( istable( excludeSchedules ) ) then
+			if ( excludeSchedules[npc:GetCurrentSchedule()] ) then
+				return false
 			end
 		end
 
 		return true
 	end
-	
+
 	-- Helper to perform a listener's reply (reduces nesting inside timers)
 	function MetroDialogue.ResponderSpeak( responder, response, participants, respDur, sessionId )
 		if ( !IsValid( responder ) ) then return end
