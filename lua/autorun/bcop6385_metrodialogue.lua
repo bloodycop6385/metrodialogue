@@ -369,28 +369,7 @@ if ( SERVER ) then
 
 		return true
 	end
-
-	function MetroDialogue.GetAllowedResponses( responses, speaker, listeners, participants, line )
-		local out = {}
-
-		if ( istable( responses ) ) then
-			for i = 1, #responses do
-				local resp = responses[i]
-				if ( !istable( resp ) ) then continue end
-
-				if ( MetroDialogue.IsGroupAllowed( resp.requiresGroup, #participants )
-					and MetroDialogue.IsAloneAllowed( resp.shouldBeAlone, #listeners )
-					and MetroDialogue.EvaluateCanSay( resp.canSay, speaker, listeners, participants, line, resp )
-					and MetroDialogue.IsScheduleAllowed( speaker, resp.includeSchedules, resp.excludeSchedules ) ) then
-
-					out[ #out + 1 ] = resp
-				end
-			end
-		end
-
-		return out
-	end
-
+	
 	-- Helper to perform a listener's reply (reduces nesting inside timers)
 	function MetroDialogue.ResponderSpeak( responder, response, participants, respDur, sessionId )
 		if ( !IsValid( responder ) ) then return end
