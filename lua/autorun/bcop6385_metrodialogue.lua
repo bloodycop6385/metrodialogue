@@ -356,7 +356,7 @@ if ( SERVER ) then
 				local t = p:GetTable()
 				if ( !istable( t ) ) then return end
 
-					-- Only clear if this is the same session
+				-- Only clear if this is the same session
 				if ( sessionId == nil or t.MetroDialogue_SessionId == sessionId ) then
 					t.MetroDialogue_DialoguePartners = {}
 				end
